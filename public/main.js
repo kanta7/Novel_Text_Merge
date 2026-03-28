@@ -1,40 +1,40 @@
-const folderSelect = document.getElementById('folder-select');
-const providerSelect = document.getElementById('provider-select');
-const languageSelect = document.getElementById('language-select');
-const btnStart = document.getElementById('btn-start');
-const btnDownload = document.getElementById('btn-download');
-const btnReset = document.getElementById('btn-reset');
-const sectionSelect = document.getElementById('section-select');
-const sectionProgress = document.getElementById('section-progress');
-const sectionComplete = document.getElementById('section-complete');
-const divider = document.getElementById('divider');
-const progressBar = document.getElementById('progress-bar');
-const progressCount = document.getElementById('progress-count');
-const progressFilename = document.getElementById('progress-filename');
+const folderSelect       = document.getElementById('folder-select');
+const providerSelect     = document.getElementById('provider-select');
+const languageSelect     = document.getElementById('language-select');
+const btnStart           = document.getElementById('btn-start');
+const btnDownload        = document.getElementById('btn-download');
+const btnReset           = document.getElementById('btn-reset');
+const sectionSelect      = document.getElementById('section-select');
+const sectionProgress    = document.getElementById('section-progress');
+const sectionComplete    = document.getElementById('section-complete');
+const divider            = document.getElementById('divider');
+const progressBar        = document.getElementById('progress-bar');
+const progressCount      = document.getElementById('progress-count');
+const progressFilename   = document.getElementById('progress-filename');
 const progressFolderName = document.getElementById('progress-folder-name');
-const badgeSkip = document.getElementById('badge-skip');
-const errorSelect = document.getElementById('error-select');
-const errorProcess = document.getElementById('error-process');
-const completeMessage = document.getElementById('complete-message');
-const errorSummaryBox   = document.getElementById('error-summary-box');
-const errorSummaryCount = document.getElementById('error-summary-count');
-const errorSummaryList  = document.getElementById('error-summary-list');
-const historyList       = document.getElementById('history-list');
-const historyEmpty      = document.getElementById('history-empty');
-const btnClearHistory   = document.getElementById('btn-clear-history');
+const badgeSkip          = document.getElementById('badge-skip');
+const errorSelect        = document.getElementById('error-select');
+const errorProcess       = document.getElementById('error-process');
+const completeMessage    = document.getElementById('complete-message');
+// Error toggle (complete section)
+const btnErrorToggle     = document.getElementById('btn-error-toggle');
+const errorToggleCount   = document.getElementById('error-toggle-count');
+const errorDetailBox     = document.getElementById('error-detail-box');
+const errorDetailList    = document.getElementById('error-detail-list');
+// History
+const historyList        = document.getElementById('history-list');
+const btnClearHistory    = document.getElementById('btn-clear-history');
 
 let currentFolder = '';
-let eventSource = null;
+let eventSource   = null;
 
-// Load folder list on startup
+// ── Folder list ───────────────────────────────────────────
+
 async function loadFolders() {
   try {
-    const res = await fetch('/api/folders');
+    const res  = await fetch('/api/folders');
     const data = await res.json();
-    if (data.error) {
-      showError(errorSelect, data.error);
-      return;
-    }
+    if (data.error) { showError(errorSelect, data.error); return; }
     folderSelect.innerHTML = '';
     if (data.folders.length === 0) {
       folderSelect.innerHTML = '<option value="">フォルダが見つかりません</option>';
@@ -52,6 +52,8 @@ async function loadFolders() {
   }
 }
 
+// ── UI helpers ────────────────────────────────────────────
+
 function showError(el, msg) {
   el.textContent = msg;
   el.classList.add('active');
@@ -66,7 +68,6 @@ function showState(state) {
   sectionProgress.classList.remove('active');
   sectionComplete.classList.remove('active');
   divider.style.display = 'none';
-
   if (state === 'progress') {
     divider.style.display = '';
     sectionProgress.classList.add('active');
@@ -76,7 +77,15 @@ function showState(state) {
   }
 }
 
-// ── History ──────────────────────────────────────────────
+/** 完了画面のエラートグルをリセット */
+function resetErrorToggle() {
+  btnErrorToggle.style.display = 'none';
+  errorDetailBox.style.display = 'none';
+  errorDetailList.innerHTML    = '';
+  errorToggleCount.textContent = '0';
+}
+
+// ── History ───────────────────────────────────────────────
 
 async function loadHistory() {
   try {
@@ -103,7 +112,6 @@ function renderHistory(entries) {
     const det = document.createElement('details');
     det.className = 'history-entry' + (hasErrors ? ' has-errors' : '');
 
-    // Format timestamp
     let dateStr = '';
     try { dateStr = new Date(entry.timestamp).toLocaleString('ja-JP'); } catch {}
 
@@ -148,40 +156,50 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ── Error toggle button ───────────────────────────────────
+
+btnErrorToggle.addEventListener('click', () => {
+  const isOpen = errorDetailBox.style.display !== 'none';
+  errorDetailBox.style.display = isOpen ? 'none' : '';
+  btnErrorToggle.textContent = '';
+  const countSpan = document.createElement('span');
+  countSpan.id = 'error-toggle-count';
+  countSpan.textContent = errorToggleCount.textContent;
+  btnErrorToggle.textContent = isOpen
+    ? `⚠️ エラー詳細を見る（${errorToggleCount.textContent}件）`
+    : `⚠️ エラー詳細を閉じる（${errorToggleCount.textContent}件）`;
+});
+
+// ── Start button ──────────────────────────────────────────
+
 btnStart.addEventListener('click', () => {
   currentFolder = folderSelect.value;
   if (!currentFolder) return;
 
   hideError(errorSelect);
   hideError(errorProcess);
-  errorSummaryBox.style.display = 'none';
-  errorSummaryList.innerHTML = '';
+  resetErrorToggle();
   btnStart.disabled = true;
 
   progressFolderName.textContent = currentFolder;
-  progressCount.textContent = '0 / ?';
-  progressBar.style.width = '0%';
-  progressFilename.textContent = '処理中...';
-  badgeSkip.style.display = 'none';
-  badgeSkip.textContent = '';
+  progressCount.textContent      = '0 / ?';
+  progressBar.style.width        = '0%';
+  progressFilename.textContent   = '処理中...';
+  badgeSkip.style.display        = 'none';
+  badgeSkip.textContent          = '';
   showState('progress');
 
-  if (eventSource) {
-    eventSource.close();
-  }
+  if (eventSource) eventSource.close();
 
-  // Flag to prevent onerror from firing after normal completion
   let processingComplete = false;
 
-  eventSource = new EventSource(`/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}`);
+  eventSource = new EventSource(
+    `/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}`
+  );
 
   eventSource.onmessage = (e) => {
     let data;
-    try {
-      data = JSON.parse(e.data);
-    } catch {
-      return;
-    }
+    try { data = JSON.parse(e.data); } catch { return; }
 
     if (data.error) {
       processingComplete = true;
@@ -195,15 +213,13 @@ btnStart.addEventListener('click', () => {
 
     if (!data.done) {
       const pct = Math.round((data.current / data.total) * 100);
-      progressBar.style.width = pct + '%';
-      progressCount.textContent = `${data.current} / ${data.total}`;
+      progressBar.style.width        = pct + '%';
+      progressCount.textContent      = `${data.current} / ${data.total}`;
 
-      // スキップバッジ（再開時）
       if (data.skipped > 0) {
-        badgeSkip.textContent = `↩ ${data.skipped}枚スキップ（再開）`;
+        badgeSkip.textContent  = `↩ ${data.skipped}枚スキップ（再開）`;
         badgeSkip.style.display = '';
       } else {
-        // 通常進捗はファイル名を表示
         progressFilename.textContent = data.filename;
       }
     } else {
@@ -211,21 +227,26 @@ btnStart.addEventListener('click', () => {
       eventSource.close();
       eventSource = null;
 
-      // Error summary
-      if (data.errors && data.errors.length > 0) {
-        completeMessage.textContent = `テキスト抽出が完了しました（${data.errors.length}件のエラーあり）  (${data.total ?? ''}枚処理)`;
-        errorSummaryCount.textContent = data.errors.length;
-        errorSummaryList.innerHTML = '';
-        data.errors.forEach(e => {
+      const errCount = data.errors ? data.errors.length : 0;
+
+      if (errCount > 0) {
+        // エラーあり: 件数を表示し、ボタンでトグル開閉
+        completeMessage.textContent      = `変換完了（${data.total ?? ''}枚処理 / ${errCount}件エラー）`;
+        errorToggleCount.textContent     = errCount;
+        errorDetailList.innerHTML        = '';
+        data.errors.forEach(err => {
           const li = document.createElement('li');
-          li.textContent = `${e.filename}:  ${e.message}`;
-          errorSummaryList.appendChild(li);
+          li.textContent = `${err.filename}:  ${err.message}`;
+          errorDetailList.appendChild(li);
         });
-        errorSummaryBox.style.display = '';
+        btnErrorToggle.textContent   = `⚠️ エラー詳細を見る（${errCount}件）`;
+        btnErrorToggle.style.display = '';
+        errorDetailBox.style.display = 'none'; // 初期は閉じた状態
       } else {
-        completeMessage.textContent = `テキスト抽出が完了しました！  (${data.total ?? ''} 枚処理)`;
-        errorSummaryBox.style.display = 'none';
+        completeMessage.textContent  = `テキスト抽出が完了しました！  (${data.total ?? ''} 枚処理)`;
+        resetErrorToggle();
       }
+
       btnDownload.onclick = () => {
         window.location.href = `/api/download/${encodeURIComponent(currentFolder)}`;
       };
@@ -235,8 +256,6 @@ btnStart.addEventListener('click', () => {
   };
 
   eventSource.onerror = () => {
-    // Ignore onerror if already completed or handled — server closing the connection
-    // after sending done:true also triggers onerror in browsers.
     if (processingComplete) return;
     eventSource.close();
     eventSource = null;
@@ -246,15 +265,17 @@ btnStart.addEventListener('click', () => {
   };
 });
 
+// ── Reset button ──────────────────────────────────────────
+
 btnReset.addEventListener('click', () => {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
+  if (eventSource) { eventSource.close(); eventSource = null; }
   hideError(errorProcess);
+  resetErrorToggle();
   showState(null);
   btnStart.disabled = folderSelect.value === '';
 });
+
+// ── Clear history button ──────────────────────────────────
 
 btnClearHistory.addEventListener('click', async () => {
   if (!confirm('変換履歴をすべて削除しますか？')) return;
@@ -265,6 +286,8 @@ btnClearHistory.addEventListener('click', async () => {
     console.error('履歴クリア失敗:', e);
   }
 });
+
+// ── Init ──────────────────────────────────────────────────
 
 loadFolders();
 loadHistory();
