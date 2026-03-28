@@ -75,7 +75,7 @@ app.get('/api/process', async (req, res) => {
   }
 
   const VALID_PROVIDERS = ['anthropic', 'openai', 'google'];
-  const DEFAULT_MODELS = { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o', google: 'gemini-1.5-flash' };
+  const DEFAULT_MODELS = { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o', google: 'gemini-2.5-flash' };
   const PROVIDER_NAMES = { anthropic: 'Anthropic (Claude)', openai: 'OpenAI (GPT-4o)', google: 'Google (Gemini)' };
   const API_KEY_VARS = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', google: 'GOOGLE_API_KEY' };
 
