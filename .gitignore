@@ -1,17 +1,10 @@
 # Environment
 .env
 
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
-.venv/
-venv/
-env/
+# Node.js
+node_modules/
 
-# Output files (optional - remove if you want to track outputs)
+# Output files
 output/
 
 # Novel data (user's own content - do not commit)
