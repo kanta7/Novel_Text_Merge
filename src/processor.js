@@ -1,12 +1,15 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { extractTextFromImage, createClient } = require('./extractor');
-const { getImagePaths, writeOutput } = require('./fileUtils');
+const { getImagePaths, writeOutput, writeTempFile, readTempFile } = require('./fileUtils');
+
+/** 最大並列処理数 */
+const CONCURRENCY = 10;
 
 /**
- * Attempts to extract a clean, human-readable message from a fatal API error.
- * Returns an Error with isFatal=true if it's a non-retryable 4xx error, otherwise null.
+ * 4xx 系の致命的エラーを取り出す。429 はリトライ対象なので致命的扱いしない。
  * @param {Error} err
  * @returns {Error|null}
  */
@@ -14,7 +17,7 @@ function extractFatalError(err) {
   const status = err.status ?? err.statusCode;
   if (!status || status === 429) return null;
   if (status >= 400 && status < 500) {
-    // Try Anthropic-style JSON message: "400 {\"type\":\"error\",...}"
+    // Anthropic スタイル: "400 {\"type\":\"error\",...}"
     try {
       const jsonStr = err.message.replace(/^\d+\s+/, '');
       const parsed = JSON.parse(jsonStr);
@@ -25,7 +28,7 @@ function extractFatalError(err) {
         return e;
       }
     } catch {}
-    // OpenAI / Google style: message is already human-readable
+    // OpenAI / Google スタイル: メッセージがそのまま人間が読める形式
     if (err.message) {
       const e = new Error(err.message);
       e.isFatal = true;
@@ -36,8 +39,16 @@ function extractFatalError(err) {
 }
 
 /**
- * Async generator that processes each image and yields progress events.
- * Event shape: { current, total, filename, done, output }
+ * 並列処理 + 個別保存 + 再開対応のストリーミング版。
+ *
+ * 動作:
+ * 1. output/<folderName>/ に個別 txt を保存しながら処理
+ * 2. 既存の txt があれば対応画像をスキップ（再開機能）
+ * 3. 最大 CONCURRENCY 件を同時並列処理
+ * 4. 完了都度 SSE イベントを yield
+ * 5. 全完了後に output/<folderName>.txt へ統合
+ *
+ * イベント形状: { current, total, filename, done, output, skipped? }
  *
  * @param {string} folderPath
  * @param {string} outputDir
@@ -46,82 +57,219 @@ function extractFatalError(err) {
  * @param {string} language - 'ja' | 'en'
  * @param {string} provider - 'anthropic' | 'openai' | 'google'
  */
-async function* processFolderStream(folderPath, outputDir, apiKey, model, language = 'ja', provider = 'anthropic') {
+async function* processFolderStream(
+  folderPath, outputDir, apiKey, model, language = 'ja', provider = 'anthropic'
+) {
   const client = createClient(provider, apiKey);
-  const images = getImagePaths(folderPath);
-  const total = images.length;
-  const parts = [];
+  const images  = getImagePaths(folderPath);
+  const total   = images.length;
+  const folderName = path.basename(folderPath);
 
-  for (let idx = 0; idx < images.length; idx++) {
-    const imgPath = images[idx];
-    const filename = path.basename(imgPath);
-    let text;
-    try {
-      text = await extractTextFromImage(client, imgPath, model, 3, language, provider);
-    } catch (err) {
-      const fatal = extractFatalError(err);
-      if (fatal) throw fatal;
-      text = `[OCR ERROR: ${filename} - ${err.message}]`;
-    }
-    parts.push(text);
+  // 個別 txt の保存先: output/<folderName>/
+  const tempDir = path.join(outputDir, folderName);
+  fs.mkdirSync(tempDir, { recursive: true });
 
+  // 再開チェック: 既存 txt があればスキップ
+  const toProcess = images.filter(imgPath => {
+    const stem = path.basename(imgPath, path.extname(imgPath));
+    return !fs.existsSync(path.join(tempDir, `${stem}.txt`));
+  });
+
+  const skippedCount = total - toProcess.length;
+  let completedCount = skippedCount;
+
+  // スキップがあれば最初に通知
+  if (skippedCount > 0) {
     yield {
-      current: idx + 1,
+      current:  completedCount,
       total,
-      filename,
-      done: false,
-      output: null,
+      filename: `${skippedCount}枚スキップ済み（前回の続きから再開）`,
+      done:     false,
+      output:   null,
+      skipped:  skippedCount,
     };
   }
 
-  const merged = parts.filter(p => p).join('\n\n');
-  const outPath = writeOutput(merged, path.basename(folderPath), outputDir);
+  // 未処理画像を並列処理
+  if (toProcess.length > 0) {
+    /** イベントキュー（ワーカー → ジェネレータへ非同期受け渡し） */
+    const eventQueue  = [];
+    let waitResolve   = null;
+    let fatalError    = null;
 
-  yield {
-    current: total,
-    total,
-    filename: '',
-    done: true,
-    output: outPath,
-  };
+    function pushEvent(ev) {
+      eventQueue.push(ev);
+      if (waitResolve) {
+        const r    = waitResolve;
+        waitResolve = null;
+        r();
+      }
+    }
+
+    const taskQueue = [...toProcess];
+    let activeWorkers = 0;
+
+    /** 1 ワーカーの処理ループ */
+    async function runWorker() {
+      while (taskQueue.length > 0 && !fatalError) {
+        const imgPath = taskQueue.shift();
+        if (!imgPath) break;
+
+        const filename = path.basename(imgPath);
+        const stem     = path.basename(imgPath, path.extname(imgPath));
+        const tmpFile  = path.join(tempDir, `${stem}.txt`);
+
+        let text;
+        try {
+          text = await extractTextFromImage(client, imgPath, model, 3, language, provider);
+          writeTempFile(tmpFile, text);
+        } catch (err) {
+          if (fatalError) break;
+          const fatal = extractFatalError(err);
+          if (fatal) {
+            fatalError = fatal;
+            break;
+          }
+          text = `[OCR ERROR: ${filename} - ${err.message}]`;
+          writeTempFile(tmpFile, text);
+        }
+
+        if (!fatalError) {
+          completedCount++;
+          pushEvent({ current: completedCount, total, filename, done: false, output: null });
+        }
+      }
+
+      activeWorkers--;
+      if (activeWorkers === 0) {
+        pushEvent(null); // 全ワーカー完了シグナル
+      }
+    }
+
+    // ワーカー起動（fire & forget）
+    const workerCount = Math.min(CONCURRENCY, toProcess.length);
+    activeWorkers = workerCount;
+    for (let i = 0; i < workerCount; i++) runWorker();
+
+    // キューからイベントを yield
+    let workersDone = false;
+    while (!workersDone) {
+      if (eventQueue.length === 0) {
+        await new Promise(r => { waitResolve = r; });
+      }
+      while (eventQueue.length > 0) {
+        const ev = eventQueue.shift();
+        if (ev === null) { workersDone = true; break; }
+        yield ev;
+      }
+    }
+
+    if (fatalError) throw fatalError;
+  }
+
+  // 全個別 txt を順番通りに結合 → output/<folderName>.txt
+  const textParts = images.map(imgPath => {
+    const stem    = path.basename(imgPath, path.extname(imgPath));
+    const tmpFile = path.join(tempDir, `${stem}.txt`);
+    try {
+      return readTempFile(tmpFile);
+    } catch {
+      return `[ERROR: ${path.basename(imgPath)} は処理されませんでした]`;
+    }
+  });
+
+  const merged  = textParts.filter(t => t).join('\n\n');
+  const outPath = writeOutput(merged, folderName, outputDir);
+
+  yield { current: total, total, filename: '', done: true, output: outPath };
 }
 
 /**
- * Non-streaming version for CLI use.
- * Calls progressCb(current, total, filename) after each image.
+ * CLI 向け非ストリーミング版（並列処理 + 個別保存 + 再開対応）。
  *
- * @param {string} folderPath
- * @param {string} outputDir
- * @param {string} apiKey
- * @param {Function|null} progressCb
- * @param {string} model
- * @param {string} language - 'ja' | 'en'
- * @param {string} provider - 'anthropic' | 'openai' | 'google'
- * @returns {Promise<string>} output file path
+ * @param {string}        folderPath
+ * @param {string}        outputDir
+ * @param {string}        apiKey
+ * @param {Function|null} progressCb  (current, total, filename) コールバック
+ * @param {string}        model
+ * @param {string}        language - 'ja' | 'en'
+ * @param {string}        provider - 'anthropic' | 'openai' | 'google'
+ * @returns {Promise<string>} 出力ファイルパス
  */
-async function processFolder(folderPath, outputDir, apiKey, progressCb = null, model = 'claude-sonnet-4-6', language = 'ja', provider = 'anthropic') {
-  const client = createClient(provider, apiKey);
-  const images = getImagePaths(folderPath);
-  const total = images.length;
-  const parts = [];
+async function processFolder(
+  folderPath, outputDir, apiKey,
+  progressCb = null,
+  model    = 'claude-sonnet-4-6',
+  language = 'ja',
+  provider = 'anthropic'
+) {
+  const client     = createClient(provider, apiKey);
+  const images     = getImagePaths(folderPath);
+  const total      = images.length;
+  const folderName = path.basename(folderPath);
 
-  for (let idx = 0; idx < images.length; idx++) {
-    const imgPath = images[idx];
-    const filename = path.basename(imgPath);
-    let text;
-    try {
-      text = await extractTextFromImage(client, imgPath, model, 3, language, provider);
-    } catch (err) {
-      const fatal = extractFatalError(err);
-      if (fatal) throw fatal;
-      text = `[OCR ERROR: ${filename} - ${err.message}]`;
-    }
-    parts.push(text);
-    if (progressCb) progressCb(idx + 1, total, filename);
+  const tempDir = path.join(outputDir, folderName);
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  // スキップチェック
+  const toProcess    = images.filter(imgPath => {
+    const stem = path.basename(imgPath, path.extname(imgPath));
+    return !fs.existsSync(path.join(tempDir, `${stem}.txt`));
+  });
+  const skippedCount = total - toProcess.length;
+  let completedCount = skippedCount;
+
+  if (skippedCount > 0 && progressCb) {
+    progressCb(completedCount, total, `(${skippedCount}枚スキップ済み – 再開)`);
   }
 
-  const merged = parts.filter(p => p).join('\n\n');
-  return writeOutput(merged, path.basename(folderPath), outputDir);
+  let fatalError = null;
+
+  async function runWorker(queue) {
+    while (queue.length > 0 && !fatalError) {
+      const imgPath = queue.shift();
+      if (!imgPath) break;
+
+      const filename = path.basename(imgPath);
+      const stem     = path.basename(imgPath, path.extname(imgPath));
+      const tmpFile  = path.join(tempDir, `${stem}.txt`);
+
+      let text;
+      try {
+        text = await extractTextFromImage(client, imgPath, model, 3, language, provider);
+        writeTempFile(tmpFile, text);
+      } catch (err) {
+        const fatal = extractFatalError(err);
+        if (fatal) { fatalError = fatal; break; }
+        text = `[OCR ERROR: ${filename} - ${err.message}]`;
+        writeTempFile(tmpFile, text);
+      }
+
+      if (!fatalError) {
+        completedCount++;
+        if (progressCb) progressCb(completedCount, total, filename);
+      }
+    }
+  }
+
+  const taskQueue   = [...toProcess];
+  const workerCount = Math.min(CONCURRENCY, toProcess.length);
+  if (workerCount > 0) {
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker(taskQueue)));
+  }
+
+  if (fatalError) throw fatalError;
+
+  // 結合
+  const textParts = images.map(imgPath => {
+    const stem    = path.basename(imgPath, path.extname(imgPath));
+    const tmpFile = path.join(tempDir, `${stem}.txt`);
+    try { return readTempFile(tmpFile); }
+    catch { return `[ERROR: ${path.basename(imgPath)} は処理されませんでした]`; }
+  });
+
+  const merged = textParts.filter(t => t).join('\n\n');
+  return writeOutput(merged, folderName, outputDir);
 }
 
 module.exports = { processFolderStream, processFolder };

@@ -76,4 +76,28 @@ function writeOutput(text, folderName, outputDir) {
   return outPath;
 }
 
-module.exports = { getImagePaths, listNovelFolders, writeOutput };
+/**
+ * Writes text to an individual temp file with UTF-8 BOM.
+ * Used for per-image intermediate results.
+ * @param {string} filePath - absolute path to the temp file
+ * @param {string} text
+ */
+function writeTempFile(filePath, text) {
+  const BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
+  fs.writeFileSync(filePath, Buffer.concat([BOM, Buffer.from(text, 'utf8')]));
+}
+
+/**
+ * Reads a temp file, stripping UTF-8 BOM if present.
+ * @param {string} filePath - absolute path to the temp file
+ * @returns {string}
+ */
+function readTempFile(filePath) {
+  const buf = fs.readFileSync(filePath);
+  if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
+    return buf.slice(3).toString('utf8');
+  }
+  return buf.toString('utf8');
+}
+
+module.exports = { getImagePaths, listNovelFolders, writeOutput, writeTempFile, readTempFile };

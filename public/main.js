@@ -12,6 +12,7 @@ const progressBar = document.getElementById('progress-bar');
 const progressCount = document.getElementById('progress-count');
 const progressFilename = document.getElementById('progress-filename');
 const progressFolderName = document.getElementById('progress-folder-name');
+const badgeSkip = document.getElementById('badge-skip');
 const errorSelect = document.getElementById('error-select');
 const errorProcess = document.getElementById('error-process');
 const completeMessage = document.getElementById('complete-message');
@@ -81,6 +82,8 @@ btnStart.addEventListener('click', () => {
   progressCount.textContent = '0 / ?';
   progressBar.style.width = '0%';
   progressFilename.textContent = '処理中...';
+  badgeSkip.style.display = 'none';
+  badgeSkip.textContent = '';
   showState('progress');
 
   if (eventSource) {
@@ -114,7 +117,15 @@ btnStart.addEventListener('click', () => {
       const pct = Math.round((data.current / data.total) * 100);
       progressBar.style.width = pct + '%';
       progressCount.textContent = `${data.current} / ${data.total}`;
-      progressFilename.textContent = data.filename;
+
+      // スキップバッジ（再開時）
+      if (data.skipped > 0) {
+        badgeSkip.textContent = `↩ ${data.skipped}枚スキップ（再開）`;
+        badgeSkip.style.display = '';
+      } else {
+        // 通常進捗はファイル名を表示
+        progressFilename.textContent = data.filename;
+      }
     } else {
       processingComplete = true;
       eventSource.close();
