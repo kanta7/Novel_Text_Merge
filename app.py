@@ -1,5 +1,8 @@
 import json
 import os
+import sys
+import threading
+import webbrowser
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,11 +10,19 @@ from flask import Flask, Response, jsonify, render_template, request, send_file
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = Path(os.environ.get('NOVEL_DATA_DIR', BASE_DIR / 'Novel_data'))
-OUTPUT_DIR = Path(os.environ.get('NOVEL_OUTPUT_DIR', BASE_DIR / 'output'))
+# Windows でカレントディレクトリに関わらず core モジュールを確実にインポートできるようにする
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
-app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
+DATA_DIR = Path(os.environ.get('NOVEL_DATA_DIR') or (BASE_DIR / 'Novel_data'))
+OUTPUT_DIR = Path(os.environ.get('NOVEL_OUTPUT_DIR') or (BASE_DIR / 'output'))
+
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / 'web' / 'templates'),
+    static_folder=str(BASE_DIR / 'web' / 'static'),
+)
 
 
 def get_api_key():
@@ -92,5 +103,17 @@ def download(folder_name: str):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f'サーバー起動中: http://localhost:{port}')
-    app.run(debug=False, host='0.0.0.0', port=port)
+    url = f'http://localhost:{port}'
+    print(f'サーバー起動中: {url}')
+    print('ブラウザが自動で開きます。開かない場合は上記URLを手動で開いてください。')
+
+    # Windows でも SSE が正常に動作するよう、起動後にブラウザを開く
+    threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+
+    app.run(
+        debug=False,
+        host='0.0.0.0',
+        port=port,
+        threaded=True,       # Windows で SSE ストリーミングに必須
+        use_reloader=False,  # リローダー無効化（Windows での二重起動を防ぐ）
+    )

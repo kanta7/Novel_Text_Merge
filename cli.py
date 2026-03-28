@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 DEFAULT_DATA_DIR = BASE_DIR / 'Novel_data'
 DEFAULT_OUTPUT_DIR = BASE_DIR / 'output'
 
