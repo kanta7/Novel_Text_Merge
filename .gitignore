@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Output files (optional - remove if you want to track outputs)
+output/
+
+# Novel data (user's own content - do not commit)
+Novel_data/
+
+# OS
+.DS_Store
+Thumbs.db
