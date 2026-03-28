@@ -74,9 +74,15 @@ app.get('/api/process', async (req, res) => {
     return sseError(res, 'folder パラメータが必要です');
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY || '';
+  const VALID_PROVIDERS = ['anthropic', 'openai', 'google'];
+  const DEFAULT_MODELS = { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o', google: 'gemini-1.5-flash' };
+  const PROVIDER_NAMES = { anthropic: 'Anthropic (Claude)', openai: 'OpenAI (GPT-4o)', google: 'Google (Gemini)' };
+  const API_KEY_VARS = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', google: 'GOOGLE_API_KEY' };
+
+  const provider = VALID_PROVIDERS.includes(req.query.provider) ? req.query.provider : 'anthropic';
+  const apiKey = process.env[API_KEY_VARS[provider]] || '';
   if (!apiKey) {
-    return sseError(res, 'ANTHROPIC_API_KEY が設定されていません。.env.local を確認してください。');
+    return sseError(res, `${API_KEY_VARS[provider]} が設定されていません。.env.local を確認してください。`);
   }
 
   const folderPath = path.join(DATA_DIR, folderName);
@@ -84,10 +90,11 @@ app.get('/api/process', async (req, res) => {
     return sseError(res, `フォルダが見つかりません: ${folderName}`);
   }
 
-  const model = (req.query.model || 'claude-sonnet-4-6').trim();
+  const model = (req.query.model || DEFAULT_MODELS[provider]).trim();
+  const language = ['ja', 'en'].includes(req.query.language) ? req.query.language : 'ja';
 
   try {
-    for await (const event of processFolderStream(folderPath, OUTPUT_DIR, apiKey, model)) {
+    for await (const event of processFolderStream(folderPath, OUTPUT_DIR, apiKey, model, language, provider)) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   } catch (err) {

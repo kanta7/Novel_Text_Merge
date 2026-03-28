@@ -1,7 +1,6 @@
 'use strict';
 
 const fs = require('fs');
-const Anthropic = require('@anthropic-ai/sdk');
 
 const EXTRACTION_PROMPT = `あなたは日本語OCRの専門家です。この画像から日本語テキストを正確に抽出してください。
 
@@ -17,6 +16,19 @@ const EXTRACTION_PROMPT = `あなたは日本語OCRの専門家です。この�
 
 テキストをそのまま出力してください:`;
 
+const EXTRACTION_PROMPT_EN = `You are an expert OCR assistant. Extract all English text from this image accurately.
+
+Follow these rules:
+1. Support both horizontal (left to right) and vertical text layouts
+2. Reproduce indentation with spaces
+3. Preserve line breaks as they appear in the image
+4. Accurately transcribe punctuation and symbols
+5. Exclude page numbers
+6. Return an empty string if no text is found in the image
+7. Output extracted text only — no explanations or comments
+
+Output the text as-is:`;
+
 /**
  * Encodes an image file to base64 string.
  * @param {string} imagePath
@@ -27,45 +39,98 @@ function encodeImage(imagePath) {
 }
 
 /**
- * Calls Claude vision API to extract Japanese text from a WebP image.
+ * Creates a provider-specific API client.
+ * @param {string} provider - 'anthropic' | 'openai' | 'google'
+ * @param {string} apiKey
+ * @returns {object}
+ */
+function createClient(provider, apiKey) {
+  switch (provider) {
+    case 'openai': {
+      const { OpenAI } = require('openai');
+      return new OpenAI({ apiKey });
+    }
+    case 'google': {
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      return new GoogleGenerativeAI(apiKey);
+    }
+    default: { // anthropic
+      const Anthropic = require('@anthropic-ai/sdk');
+      return new Anthropic({ apiKey });
+    }
+  }
+}
+
+/**
+ * Calls the provider-specific vision API and returns extracted text.
+ * @param {object} client
+ * @param {string} provider
+ * @param {string} model
+ * @param {string} b64 - base64 encoded image
+ * @param {string} prompt
+ * @returns {Promise<string>}
+ */
+async function callVisionAPI(client, provider, model, b64, prompt) {
+  switch (provider) {
+    case 'openai': {
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:image/webp;base64,${b64}` } },
+            { type: 'text', text: prompt },
+          ],
+        }],
+      });
+      return response.choices[0].message.content.trim();
+    }
+    case 'google': {
+      const genModel = client.getGenerativeModel({ model });
+      const result = await genModel.generateContent([
+        prompt,
+        { inlineData: { data: b64, mimeType: 'image/webp' } },
+      ]);
+      return result.response.text().trim();
+    }
+    default: { // anthropic
+      const message = await client.messages.create({
+        model,
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/webp', data: b64 } },
+            { type: 'text', text: prompt },
+          ],
+        }],
+      });
+      return message.content[0].text.trim();
+    }
+  }
+}
+
+/**
+ * Calls vision API to extract text from a WebP image.
  * Retries on rate limit (429) with exponential backoff.
  *
- * @param {Anthropic} client
+ * @param {object} client - Provider-specific client created by createClient()
  * @param {string} imagePath - absolute path to .webp file
  * @param {string} model
  * @param {number} maxRetries
+ * @param {string} language - 'ja' | 'en'
+ * @param {string} provider - 'anthropic' | 'openai' | 'google'
  * @returns {Promise<string>}
  */
-async function extractTextFromImage(client, imagePath, model = 'claude-sonnet-4-6', maxRetries = 3) {
+async function extractTextFromImage(client, imagePath, model, maxRetries = 3, language = 'ja', provider = 'anthropic') {
   const b64 = encodeImage(imagePath);
+  const prompt = language === 'en' ? EXTRACTION_PROMPT_EN : EXTRACTION_PROMPT;
   let lastError;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const message = await client.messages.create({
-        model,
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/webp',
-                  data: b64,
-                },
-              },
-              {
-                type: 'text',
-                text: EXTRACTION_PROMPT,
-              },
-            ],
-          },
-        ],
-      });
-      return message.content[0].text.trim();
+      return await callVisionAPI(client, provider, model, b64, prompt);
     } catch (err) {
       if (err.status === 429) {
         lastError = err;
@@ -80,4 +145,4 @@ async function extractTextFromImage(client, imagePath, model = 'claude-sonnet-4-
   throw lastError;
 }
 
-module.exports = { extractTextFromImage, EXTRACTION_PROMPT };
+module.exports = { extractTextFromImage, createClient, EXTRACTION_PROMPT, EXTRACTION_PROMPT_EN };

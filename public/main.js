@@ -1,4 +1,6 @@
 const folderSelect = document.getElementById('folder-select');
+const providerSelect = document.getElementById('provider-select');
+const languageSelect = document.getElementById('language-select');
 const btnStart = document.getElementById('btn-start');
 const btnDownload = document.getElementById('btn-download');
 const btnReset = document.getElementById('btn-reset');
@@ -88,7 +90,7 @@ btnStart.addEventListener('click', () => {
   // Flag to prevent onerror from firing after normal completion
   let processingComplete = false;
 
-  eventSource = new EventSource(`/api/process?folder=${encodeURIComponent(currentFolder)}`);
+  eventSource = new EventSource(`/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}`);
 
   eventSource.onmessage = (e) => {
     let data;
