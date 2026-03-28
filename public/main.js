@@ -1,7 +1,6 @@
 const folderSelect       = document.getElementById('folder-select');
 const providerSelect     = document.getElementById('provider-select');
 const languageSelect     = document.getElementById('language-select');
-const mergeSelect        = document.getElementById('merge-select');
 const btnStart           = document.getElementById('btn-start');
 const btnDownload        = document.getElementById('btn-download');
 const btnReset           = document.getElementById('btn-reset');
@@ -199,9 +198,10 @@ btnStart.addEventListener('click', () => {
   let processingComplete = false;
 
   const joinLines = document.querySelector('input[name="join-lines"]:checked').value === 'yes';
+  const mergeOption = document.querySelector('input[name="merge-option"]:checked').value;
 
   eventSource = new EventSource(
-    `/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}&merge=${mergeSelect.value}&joinLines=${joinLines}`
+    `/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}&merge=${mergeOption}&joinLines=${joinLines}`
   );
 
   eventSource.onmessage = (e) => {

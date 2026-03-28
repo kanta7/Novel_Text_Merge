@@ -186,6 +186,49 @@
       color: #1e40af;
     }
 
+    /* Advanced settings (details/summary) */
+    .advanced-details {
+      margin-bottom: 20px;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .advanced-summary {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      background: #f9fafb;
+    }
+
+    .advanced-summary::-webkit-details-marker { display: none; }
+    .advanced-summary::marker { display: none; }
+
+    .advanced-summary:hover { background: #f3f4f6; }
+
+    .advanced-summary .summary-arrow {
+      font-size: 0.7rem;
+      transition: transform 0.2s;
+      color: #9ca3af;
+    }
+
+    .advanced-details[open] .summary-arrow {
+      transform: rotate(90deg);
+    }
+
+    .advanced-body {
+      padding: 16px 16px 4px;
+      border-top: 1.5px solid #e5e7eb;
+      background: #fff;
+    }
+
     /* Radio group */
     .radio-group-label {
       display: block;
@@ -199,7 +242,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .radio-item {
@@ -415,28 +458,47 @@
         <option value="ja" selected>日本語</option>
         <option value="en">English</option>
       </select>
-      <span class="radio-group-label">文中改行の処理</span>
-      <div class="radio-group">
-        <label class="radio-item">
-          <input type="radio" name="join-lines" value="yes" checked>
-          <span class="radio-item-text">
-            文中の改行を結合する（推奨）
-            <small>一文の区切りでない改行を取り除き、文をひとつながりに整形します</small>
-          </span>
-        </label>
-        <label class="radio-item">
-          <input type="radio" name="join-lines" value="no">
-          <span class="radio-item-text">
-            改行をそのまま保持する
-            <small>画像上の行区切りをそのままテキストに反映します</small>
-          </span>
-        </label>
-      </div>
-      <label for="merge-select">結合オプション</label>
-      <select id="merge-select">
-        <option value="both" selected>文章化 + 結合（デフォルト）</option>
-        <option value="extract-only">文章化のみ（結合しない）</option>
-      </select>
+      <details class="advanced-details">
+        <summary class="advanced-summary">
+          <span class="summary-arrow">▶</span>詳細設定
+        </summary>
+        <div class="advanced-body">
+          <span class="radio-group-label">文中改行の処理</span>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="join-lines" value="yes" checked>
+              <span class="radio-item-text">
+                文中の改行を結合する（推奨）
+                <small>一文の区切りでない改行を取り除き、文をひとつながりに整形します</small>
+              </span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="join-lines" value="no">
+              <span class="radio-item-text">
+                改行をそのまま保持する
+                <small>画像上の行区切りをそのままテキストに反映します</small>
+              </span>
+            </label>
+          </div>
+          <span class="radio-group-label">結合オプション</span>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="merge-option" value="both" checked>
+              <span class="radio-item-text">
+                文章化 + 結合（推奨）
+                <small>全ページを1つのテキストファイルに統合します</small>
+              </span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="merge-option" value="extract-only">
+              <span class="radio-item-text">
+                文章化のみ（結合しない）
+                <small>個別 txt ファイルのみ保存し、統合ファイルは作成しません</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      </details>
       <button class="btn btn-primary" id="btn-start" disabled>処理を開始</button>
       <div class="error-box" id="error-select"></div>
     </div>
