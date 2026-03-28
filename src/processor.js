@@ -80,7 +80,7 @@ function scanAllErrors(images, tempDir) {
  * @param {string} provider - 'anthropic' | 'openai' | 'google'
  */
 async function* processFolderStream(
-  folderPath, outputDir, apiKey, model, language = 'ja', provider = 'anthropic'
+  folderPath, outputDir, apiKey, model, language = 'ja', provider = 'anthropic', merge = 'both', joinLines = false
 ) {
   const client = createClient(provider, apiKey);
   const images  = getImagePaths(folderPath);
@@ -146,7 +146,7 @@ async function* processFolderStream(
 
         let text;
         try {
-          text = await extractTextFromImage(client, imgPath, model, 3, language, provider);
+          text = await extractTextFromImage(client, imgPath, model, 3, language, provider, joinLines);
           writeTempFile(tmpFile, text);
         } catch (err) {
           if (fatalError) break;
@@ -193,21 +193,30 @@ async function* processFolderStream(
     if (fatalError) throw fatalError;
   }
 
-  // 全個別 txt を順番通りに結合 → output/<folderName>.txt
-  const textParts = images.map(imgPath => {
+  // Scan ALL temp files for errors (covers resume runs where previous errors exist)
+  const allErrors = scanAllErrors(images, tempDir);
+
+  if (merge === 'extract-only') {
+    // 結合スキップ: 個別 txt のみ保存済み、最終ファイルは作らない
+    yield { current: total, total, filename: '', done: true, output: null, mergeSkipped: true, errors: allErrors };
+    return;
+  }
+
+  // 全個別 txt を順番通りに結合 → output/<folderName>.txt（進捗イベントつき）
+  const textParts = [];
+  for (let i = 0; i < images.length; i++) {
+    const imgPath = images[i];
     const stem    = path.basename(imgPath, path.extname(imgPath));
     const tmpFile = path.join(tempDir, `${stem}.txt`);
     try {
-      return readTempFile(tmpFile);
+      textParts.push(readTempFile(tmpFile));
     } catch {
-      return `[ERROR: ${path.basename(imgPath)} は処理されませんでした]`;
+      textParts.push(`[ERROR: ${path.basename(imgPath)} は処理されませんでした]`);
     }
-  });
+    yield { mergeStep: true, current: i + 1, total: images.length, done: false };
+  }
 
   let finalText = textParts.filter(t => t).join('\n\n');
-
-  // Scan ALL temp files for errors (covers resume runs where previous errors exist)
-  const allErrors = scanAllErrors(images, tempDir);
 
   // Append error summary section if errors exist
   if (allErrors.length > 0) {

@@ -92,9 +92,11 @@ app.get('/api/process', async (req, res) => {
 
   const model = (req.query.model || DEFAULT_MODELS[provider]).trim();
   const language = ['ja', 'en'].includes(req.query.language) ? req.query.language : 'ja';
+  const merge = req.query.merge === 'extract-only' ? 'extract-only' : 'both';
+  const joinLines = req.query.joinLines === 'true';
 
   try {
-    for await (const event of processFolderStream(folderPath, OUTPUT_DIR, apiKey, model, language, provider)) {
+    for await (const event of processFolderStream(folderPath, OUTPUT_DIR, apiKey, model, language, provider, merge, joinLines)) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   } catch (err) {

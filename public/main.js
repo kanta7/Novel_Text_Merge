@@ -1,6 +1,7 @@
 const folderSelect       = document.getElementById('folder-select');
 const providerSelect     = document.getElementById('provider-select');
 const languageSelect     = document.getElementById('language-select');
+const mergeSelect        = document.getElementById('merge-select');
 const btnStart           = document.getElementById('btn-start');
 const btnDownload        = document.getElementById('btn-download');
 const btnReset           = document.getElementById('btn-reset');
@@ -13,6 +14,8 @@ const progressCount      = document.getElementById('progress-count');
 const progressFilename   = document.getElementById('progress-filename');
 const progressFolderName = document.getElementById('progress-folder-name');
 const badgeSkip          = document.getElementById('badge-skip');
+const badgeParallel      = document.getElementById('badge-parallel');
+const badgeMerge         = document.getElementById('badge-merge');
 const errorSelect        = document.getElementById('error-select');
 const errorProcess       = document.getElementById('error-process');
 const completeMessage    = document.getElementById('complete-message');
@@ -187,14 +190,18 @@ btnStart.addEventListener('click', () => {
   progressFilename.textContent   = '処理中...';
   badgeSkip.style.display        = 'none';
   badgeSkip.textContent          = '';
+  badgeParallel.style.display    = '';
+  badgeMerge.style.display       = 'none';
   showState('progress');
 
   if (eventSource) eventSource.close();
 
   let processingComplete = false;
 
+  const joinLines = document.querySelector('input[name="join-lines"]:checked').value === 'yes';
+
   eventSource = new EventSource(
-    `/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}`
+    `/api/process?folder=${encodeURIComponent(currentFolder)}&provider=${providerSelect.value}&language=${languageSelect.value}&merge=${mergeSelect.value}&joinLines=${joinLines}`
   );
 
   eventSource.onmessage = (e) => {
@@ -211,7 +218,16 @@ btnStart.addEventListener('click', () => {
       return;
     }
 
-    if (!data.done) {
+    if (data.mergeStep) {
+      // 結合ステップの進捗
+      const pct = Math.round((data.current / data.total) * 100);
+      progressBar.style.width   = pct + '%';
+      progressCount.textContent = `結合中: ${data.current} / ${data.total}`;
+      badgeParallel.style.display = 'none';
+      badgeMerge.style.display    = '';
+      progressFilename.textContent = '';
+    } else if (!data.done) {
+      // 並列処理ステップの進捗
       const pct = Math.round((data.current / data.total) * 100);
       progressBar.style.width        = pct + '%';
       progressCount.textContent      = `${data.current} / ${data.total}`;
@@ -229,8 +245,26 @@ btnStart.addEventListener('click', () => {
 
       const errCount = data.errors ? data.errors.length : 0;
 
-      if (errCount > 0) {
-        // エラーあり: 件数を表示し、ボタンでトグル開閉
+      if (data.mergeSkipped) {
+        // 結合なし完了
+        completeMessage.textContent = `文章化が完了しました（${data.total ?? ''}枚 / 個別ファイルは output フォルダに保存）`;
+        btnDownload.style.display = 'none';
+        if (errCount > 0) {
+          errorToggleCount.textContent = errCount;
+          errorDetailList.innerHTML = '';
+          data.errors.forEach(err => {
+            const li = document.createElement('li');
+            li.textContent = `${err.filename}:  ${err.message}`;
+            errorDetailList.appendChild(li);
+          });
+          btnErrorToggle.textContent   = `⚠️ エラー詳細を見る（${errCount}件）`;
+          btnErrorToggle.style.display = '';
+          errorDetailBox.style.display = 'none';
+        } else {
+          resetErrorToggle();
+        }
+      } else if (errCount > 0) {
+        // 結合あり・エラーあり
         completeMessage.textContent      = `変換完了（${data.total ?? ''}枚処理 / ${errCount}件エラー）`;
         errorToggleCount.textContent     = errCount;
         errorDetailList.innerHTML        = '';
@@ -241,15 +275,21 @@ btnStart.addEventListener('click', () => {
         });
         btnErrorToggle.textContent   = `⚠️ エラー詳細を見る（${errCount}件）`;
         btnErrorToggle.style.display = '';
-        errorDetailBox.style.display = 'none'; // 初期は閉じた状態
+        errorDetailBox.style.display = 'none';
+        btnDownload.style.display = '';
+        btnDownload.onclick = () => {
+          window.location.href = `/api/download/${encodeURIComponent(currentFolder)}`;
+        };
       } else {
+        // 結合あり・エラーなし
         completeMessage.textContent  = `テキスト抽出が完了しました！  (${data.total ?? ''} 枚処理)`;
         resetErrorToggle();
+        btnDownload.style.display = '';
+        btnDownload.onclick = () => {
+          window.location.href = `/api/download/${encodeURIComponent(currentFolder)}`;
+        };
       }
 
-      btnDownload.onclick = () => {
-        window.location.href = `/api/download/${encodeURIComponent(currentFolder)}`;
-      };
       showState('complete');
       loadHistory();
     }
@@ -271,6 +311,7 @@ btnReset.addEventListener('click', () => {
   if (eventSource) { eventSource.close(); eventSource = null; }
   hideError(errorProcess);
   resetErrorToggle();
+  btnDownload.style.display = '';
   showState(null);
   btnStart.disabled = folderSelect.value === '';
 });

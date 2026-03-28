@@ -181,6 +181,56 @@
       color: #065f46;
     }
 
+    .badge-merge {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    /* Radio group */
+    .radio-group-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 8px;
+    }
+
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .radio-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .radio-item input[type="radio"] {
+      margin: 0;
+      margin-top: 2px;
+      width: auto;
+      cursor: pointer;
+      accent-color: #4f46e5;
+      flex-shrink: 0;
+    }
+
+    .radio-item-text {
+      font-size: 0.9rem;
+      color: #374151;
+      line-height: 1.4;
+    }
+
+    .radio-item-text small {
+      display: block;
+      font-size: 0.78rem;
+      color: #6b7280;
+      margin-top: 1px;
+    }
+
     /* Complete section */
     .complete-section { display: none; }
     .complete-section.active { display: block; }
@@ -365,6 +415,28 @@
         <option value="ja" selected>日本語</option>
         <option value="en">English</option>
       </select>
+      <span class="radio-group-label">文中改行の処理</span>
+      <div class="radio-group">
+        <label class="radio-item">
+          <input type="radio" name="join-lines" value="yes" checked>
+          <span class="radio-item-text">
+            文中の改行を結合する（推奨）
+            <small>一文の区切りでない改行を取り除き、文をひとつながりに整形します</small>
+          </span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="join-lines" value="no">
+          <span class="radio-item-text">
+            改行をそのまま保持する
+            <small>画像上の行区切りをそのままテキストに反映します</small>
+          </span>
+        </label>
+      </div>
+      <label for="merge-select">結合オプション</label>
+      <select id="merge-select">
+        <option value="both" selected>文章化 + 結合（デフォルト）</option>
+        <option value="extract-only">文章化のみ（結合しない）</option>
+      </select>
       <button class="btn btn-primary" id="btn-start" disabled>処理を開始</button>
       <div class="error-box" id="error-select"></div>
     </div>
@@ -382,8 +454,9 @@
       </div>
       <p class="progress-filename" id="progress-filename">処理中...</p>
       <div class="progress-meta" id="progress-meta">
-        <span class="badge badge-parallel">⚡ 並列処理中（最大10件）</span>
+        <span class="badge badge-parallel" id="badge-parallel">⚡ 並列処理中（最大10件）</span>
         <span class="badge badge-skip" id="badge-skip" style="display:none;"></span>
+        <span class="badge badge-merge" id="badge-merge" style="display:none;">🔗 結合中</span>
       </div>
     </div>
 
