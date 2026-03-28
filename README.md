@@ -50,26 +50,51 @@ copy .env.example .env.local
 
 ## API キーの設定 / API Key Configuration
 
-`.env.local` に使用するプロバイダの API キーを設定します。使わないプロバイダは省略できます。
+`.env.local` に使いたいプロバイダのキーを追加するだけです。使わないプロバイダは省略できます。
 
 ```env
-# Anthropic (Claude) — https://console.anthropic.com/
+# Anthropic (デフォルト)
 ANTHROPIC_API_KEY=sk-ant-...
 
-# OpenAI (GPT-4o) — https://platform.openai.com/api-keys
+# OpenAI を使う場合
 OPENAI_API_KEY=sk-...
 
-# Google (Gemini) — https://aistudio.google.com/app/apikey
+# Google Gemini を使う場合
 GOOGLE_API_KEY=AIza...
 ```
 
-### 各プロバイダのデフォルトモデル / Default Models
+> **ファイル名は必ず `.env.local`** にしてください（`.env` ではなく）。
 
-| プロバイダ | モデル | 備考 |
-|---|---|---|
-| Anthropic | `claude-sonnet-4-6` | 高精度・日本語縦書き得意 |
-| OpenAI | `gpt-4o` | 汎用性が高い最新モデル |
-| Google | `gemini-1.5-flash` | 高速・低コスト |
+各 API キーの取得先:
+- Anthropic: https://console.anthropic.com/
+- OpenAI: https://platform.openai.com/api-keys
+- Google: https://aistudio.google.com/app/apikey
+
+---
+
+## おすすめプロバイダ / Recommended Provider
+
+> **Google Gemini（`gemini-1.5-flash`）をおすすめします。**
+
+### プロバイダ比較表
+
+| 項目 | Anthropic (Claude) | OpenAI (GPT-4o) | ⭐ Google (Gemini) |
+|---|---|---|---|
+| デフォルトモデル | `claude-sonnet-4-6` | `gpt-4o` | `gemini-1.5-flash` |
+| OCR 精度 | ◎ 高精度 | ◎ 高精度 | ○ 十分な精度 |
+| 処理速度 | ○ 普通 | ○ 普通 | ◎ 高速 |
+| コスト（目安/1000枚） | 約 $3〜5 | 約 $3〜5 | 約 $0.3〜0.5 |
+| 無料枠 | なし | なし | あり（1分15リクエスト） |
+| 日本語縦書き対応 | ◎ | ○ | ○ |
+
+### Gemini をおすすめする理由
+
+1. **圧倒的なコスト優位性** — `gemini-1.5-flash` は他の2プロバイダと比べて約 1/10 のコストで処理できます。数百ページの小説を処理してもほとんど費用がかかりません。
+2. **無料枠がある** — Google AI Studio の無料枠（1分あたり15リクエスト）内であれば費用ゼロで試せます。
+3. **十分な OCR 精度** — 小説テキストの抽出には十分な認識精度を持っています。
+4. **高速処理** — レスポンスが速く、大量ページの処理でも待ち時間が短くなります。
+
+> 縦書き日本語の精度を最優先する場合は **Anthropic Claude** が最も得意としています。
 
 > Web UI の「使用する AI プロバイダ」ドロップダウンで実行時に切り替えられます。
 > CLI では `--model` オプションで任意のモデル名を指定できます。
