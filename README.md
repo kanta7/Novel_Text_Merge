@@ -78,14 +78,16 @@ GOOGLE_API_KEY=AIza...
 
 ### プロバイダ比較表
 
-| 項目 | Anthropic (Claude) | OpenAI (GPT-4o) | ⭐ Google (Gemini) |
+| 項目 | ⭐ Google Gemini | Anthropic Claude | OpenAI GPT-4o |
 |---|---|---|---|
-| デフォルトモデル | `claude-sonnet-4-6` | `gpt-4o` | `gemini-1.5-flash` |
-| OCR 精度 | ◎ 高精度 | ◎ 高精度 | ○ 十分な精度 |
-| 処理速度 | ○ 普通 | ○ 普通 | ◎ 高速 |
-| コスト（目安/1000枚） | 約 $3〜5 | 約 $3〜5 | 約 $0.3〜0.5 |
-| 無料枠 | なし | なし | あり（1分15リクエスト） |
-| 日本語縦書き対応 | ◎ | ○ | ○ |
+| デフォルトモデル | `gemini-1.5-flash` | `claude-sonnet-4-6` | `gpt-4o` |
+| コスト（目安/1000枚） | **約 $0.3〜0.5** | 約 $3〜5 | 約 $3〜5 |
+| 他社との比較 | **最安（約 1/10）** | Gemini の約 10倍 | Gemini の約 10倍 |
+| 無料枠 | **あり**（毎分15リクエスト） | なし | なし |
+| 処理速度 | **◎ 高速** | ○ 普通 | ○ 普通 |
+| OCR 精度 | ○ 十分な精度 | ◎ 最高精度 | ◎ 高精度 |
+| 日本語縦書き対応 | ○ | **◎ 最も得意** | ○ |
+| キー取得先 | [AI Studio](https://aistudio.google.com/app/apikey) | [Console](https://console.anthropic.com/) | [Platform](https://platform.openai.com/api-keys) |
 
 ### Gemini をおすすめする理由
 
