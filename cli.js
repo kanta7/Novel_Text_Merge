@@ -1,9 +1,8 @@
 'use strict';
 
-require('dotenv').config({ path: '.env.local' });
-require('dotenv').config();
-
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const fs = require('fs');
 
 const BASE_DIR = __dirname;

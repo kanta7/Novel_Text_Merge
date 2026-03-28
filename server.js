@@ -1,10 +1,10 @@
 'use strict';
 
-require('dotenv').config({ path: '.env.local' });
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
-const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
 
@@ -53,38 +53,45 @@ app.get('/api/folders', (req, res) => {
   res.json({ folders: result });
 });
 
+// Helper: send an SSE error event and close
+function sseError(res, message) {
+  res.write(`data: ${JSON.stringify({ error: message, done: true })}\n\n`);
+  res.end();
+}
+
 // GET /api/process?folder=NAME&model=MODEL  (SSE)
 app.get('/api/process', async (req, res) => {
-  const folderName = (req.query.folder || '').trim();
-  if (!folderName) {
-    return res.status(400).json({ error: 'folder パラメータが必要です' });
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY || '';
-  if (!apiKey) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY が設定されていません' });
-  }
-
-  const folderPath = path.join(DATA_DIR, folderName);
-  if (!fs.existsSync(folderPath)) {
-    return res.status(404).json({ error: `フォルダが見つかりません: ${folderName}` });
-  }
-
-  const model = (req.query.model || 'claude-sonnet-4-6').trim();
-
+  // Set SSE headers FIRST so EventSource always gets a proper streaming response.
+  // All errors are sent as SSE data events instead of HTTP error codes.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('X-Accel-Buffering', 'no');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders(); // send 200 + headers immediately before the loop
+  res.flushHeaders();
+
+  const folderName = (req.query.folder || '').trim();
+  if (!folderName) {
+    return sseError(res, 'folder パラメータが必要です');
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY || '';
+  if (!apiKey) {
+    return sseError(res, 'ANTHROPIC_API_KEY が設定されていません。.env.local を確認してください。');
+  }
+
+  const folderPath = path.join(DATA_DIR, folderName);
+  if (!fs.existsSync(folderPath)) {
+    return sseError(res, `フォルダが見つかりません: ${folderName}`);
+  }
+
+  const model = (req.query.model || 'claude-sonnet-4-6').trim();
 
   try {
     for await (const event of processFolderStream(folderPath, OUTPUT_DIR, apiKey, model)) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   } catch (err) {
-    const errorEvent = { error: `予期しないエラー: ${err.message}`, done: true };
-    res.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: `予期しないエラー: ${err.message}`, done: true })}\n\n`);
   } finally {
     res.end();
   }

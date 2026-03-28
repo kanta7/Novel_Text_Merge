@@ -85,6 +85,9 @@ btnStart.addEventListener('click', () => {
     eventSource.close();
   }
 
+  // Flag to prevent onerror from firing after normal completion
+  let processingComplete = false;
+
   eventSource = new EventSource(`/api/process?folder=${encodeURIComponent(currentFolder)}`);
 
   eventSource.onmessage = (e) => {
@@ -96,7 +99,9 @@ btnStart.addEventListener('click', () => {
     }
 
     if (data.error) {
+      processingComplete = true;
       eventSource.close();
+      eventSource = null;
       showError(errorProcess, 'エラー: ' + data.error);
       showState(null);
       btnStart.disabled = false;
@@ -109,6 +114,7 @@ btnStart.addEventListener('click', () => {
       progressCount.textContent = `${data.current} / ${data.total}`;
       progressFilename.textContent = data.filename;
     } else {
+      processingComplete = true;
       eventSource.close();
       eventSource = null;
 
@@ -121,9 +127,12 @@ btnStart.addEventListener('click', () => {
   };
 
   eventSource.onerror = () => {
+    // Ignore onerror if already completed or handled — server closing the connection
+    // after sending done:true also triggers onerror in browsers.
+    if (processingComplete) return;
     eventSource.close();
     eventSource = null;
-    showError(errorProcess, 'SSE接続エラーが発生しました。サーバーの状態を確認してください。');
+    showError(errorProcess, 'サーバーへの接続に失敗しました。node server.js が起動しているか確認してください。');
     showState(null);
     btnStart.disabled = false;
   };
