@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { extractTextFromImage, createClient } = require('./extractor');
-const { getImagePaths, writeOutput, writeTempFile, readTempFile } = require('./fileUtils');
+const { getImagePaths, writeOutput, writeTempFile, readTempFile, appendHistory } = require('./fileUtils');
 
 /** 最大並列処理数 */
 const CONCURRENCY = 10;
@@ -39,6 +39,28 @@ function extractFatalError(err) {
 }
 
 /**
+ * Scans all temp files for OCR errors. Returns array of { filename, message }.
+ * @param {string[]} images - array of image paths
+ * @param {string} tempDir - directory containing temp files
+ * @returns {Array<{filename: string, message: string}>}
+ */
+function scanAllErrors(images, tempDir) {
+  const allErrors = [];
+  for (const imgPath of images) {
+    const filename = path.basename(imgPath);
+    const stem = path.basename(imgPath, path.extname(imgPath));
+    const tmpFile = path.join(tempDir, `${stem}.txt`);
+    if (!fs.existsSync(tmpFile)) continue;
+    try {
+      const content = readTempFile(tmpFile).trim();
+      const match = content.match(/^\[OCR ERROR: .+? - (.+)\]$/);
+      if (match) allErrors.push({ filename, message: match[1] });
+    } catch {}
+  }
+  return allErrors;
+}
+
+/**
  * 並列処理 + 個別保存 + 再開対応のストリーミング版。
  *
  * 動作:
@@ -48,7 +70,7 @@ function extractFatalError(err) {
  * 4. 完了都度 SSE イベントを yield
  * 5. 全完了後に output/<folderName>.txt へ統合
  *
- * イベント形状: { current, total, filename, done, output, skipped? }
+ * イベント形状: { current, total, filename, done, output, skipped?, errors? }
  *
  * @param {string} folderPath
  * @param {string} outputDir
@@ -89,6 +111,9 @@ async function* processFolderStream(
       skipped:  skippedCount,
     };
   }
+
+  // Track errors during this run
+  const errors = [];
 
   // 未処理画像を並列処理
   if (toProcess.length > 0) {
@@ -132,6 +157,7 @@ async function* processFolderStream(
           }
           text = `[OCR ERROR: ${filename} - ${err.message}]`;
           writeTempFile(tmpFile, text);
+          errors.push({ filename, message: err.message });
         }
 
         if (!fatalError) {
@@ -178,10 +204,34 @@ async function* processFolderStream(
     }
   });
 
-  const merged  = textParts.filter(t => t).join('\n\n');
-  const outPath = writeOutput(merged, folderName, outputDir);
+  let finalText = textParts.filter(t => t).join('\n\n');
 
-  yield { current: total, total, filename: '', done: true, output: outPath };
+  // Scan ALL temp files for errors (covers resume runs where previous errors exist)
+  const allErrors = scanAllErrors(images, tempDir);
+
+  // Append error summary section if errors exist
+  if (allErrors.length > 0) {
+    const errorLines = allErrors.map(e => `  ・${e.filename}: ${e.message}`).join('\n');
+    finalText += `\n\n${'='.repeat(44)}\n【処理エラー一覧 (${allErrors.length}件)】\n${errorLines}\n${'='.repeat(44)}`;
+  }
+
+  const outPath = writeOutput(finalText, folderName, outputDir);
+
+  // Write history entry
+  appendHistory(outputDir, {
+    id: Date.now(),
+    folder: folderName,
+    timestamp: new Date().toISOString(),
+    total,
+    processed: total - allErrors.length,
+    errors: allErrors,
+    provider,
+    model,
+    language,
+    outputFile: `${folderName}.txt`,
+  });
+
+  yield { current: total, total, filename: '', done: true, output: outPath, errors: allErrors };
 }
 
 /**
@@ -268,8 +318,34 @@ async function processFolder(
     catch { return `[ERROR: ${path.basename(imgPath)} は処理されませんでした]`; }
   });
 
-  const merged = textParts.filter(t => t).join('\n\n');
-  return writeOutput(merged, folderName, outputDir);
+  let finalText = textParts.filter(t => t).join('\n\n');
+
+  // Scan ALL temp files for errors (covers resume runs)
+  const allErrors = scanAllErrors(images, tempDir);
+
+  // Append error summary section if errors exist
+  if (allErrors.length > 0) {
+    const errorLines = allErrors.map(e => `  ・${e.filename}: ${e.message}`).join('\n');
+    finalText += `\n\n${'='.repeat(44)}\n【処理エラー一覧 (${allErrors.length}件)】\n${errorLines}\n${'='.repeat(44)}`;
+  }
+
+  const outPath = writeOutput(finalText, folderName, outputDir);
+
+  // Write history entry
+  appendHistory(outputDir, {
+    id: Date.now(),
+    folder: folderName,
+    timestamp: new Date().toISOString(),
+    total,
+    processed: total - allErrors.length,
+    errors: allErrors,
+    provider,
+    model,
+    language,
+    outputFile: `${folderName}.txt`,
+  });
+
+  return outPath;
 }
 
 module.exports = { processFolderStream, processFolder };

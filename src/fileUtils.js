@@ -100,4 +100,49 @@ function readTempFile(filePath) {
   return buf.toString('utf8');
 }
 
-module.exports = { getImagePaths, listNovelFolders, writeOutput, writeTempFile, readTempFile };
+/**
+ * Returns the path to the history JSON file.
+ */
+function getHistoryPath(outputDir) {
+  return path.join(outputDir, 'history.json');
+}
+
+/**
+ * Reads the conversion history array from disk.
+ * Returns [] if the file doesn't exist or is malformed.
+ * @param {string} outputDir
+ * @returns {Array}
+ */
+function readHistory(outputDir) {
+  const histPath = getHistoryPath(outputDir);
+  if (!fs.existsSync(histPath)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(histPath, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Prepends a new entry to the history file (newest first). Keeps at most 100 entries.
+ * @param {string} outputDir
+ * @param {object} entry
+ */
+function appendHistory(outputDir, entry) {
+  const history = readHistory(outputDir);
+  history.unshift(entry);
+  const trimmed = history.slice(0, 100);
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(getHistoryPath(outputDir), JSON.stringify(trimmed, null, 2), 'utf8');
+}
+
+/**
+ * Clears the history file.
+ * @param {string} outputDir
+ */
+function clearHistory(outputDir) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(getHistoryPath(outputDir), '[]', 'utf8');
+}
+
+module.exports = { getImagePaths, listNovelFolders, writeOutput, writeTempFile, readTempFile, readHistory, appendHistory, clearHistory };

@@ -8,7 +8,7 @@ const express = require('express');
 const fs = require('fs');
 const { exec } = require('child_process');
 
-const { listNovelFolders, getImagePaths } = require('./src/fileUtils');
+const { listNovelFolders, getImagePaths, readHistory, clearHistory } = require('./src/fileUtils');
 const { processFolderStream } = require('./src/processor');
 
 const BASE_DIR = __dirname;
@@ -112,6 +112,18 @@ app.get('/api/download/:folderName', (req, res) => {
     return res.status(404).json({ error: 'ファイルが見つかりません' });
   }
   res.download(outPath, `${folderName}.txt`);
+});
+
+// GET /api/history
+app.get('/api/history', (req, res) => {
+  const history = readHistory(OUTPUT_DIR);
+  res.json({ history });
+});
+
+// DELETE /api/history
+app.delete('/api/history', (req, res) => {
+  clearHistory(OUTPUT_DIR);
+  res.json({ ok: true });
 });
 
 // Start server

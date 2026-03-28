@@ -16,6 +16,12 @@ const badgeSkip = document.getElementById('badge-skip');
 const errorSelect = document.getElementById('error-select');
 const errorProcess = document.getElementById('error-process');
 const completeMessage = document.getElementById('complete-message');
+const errorSummaryBox   = document.getElementById('error-summary-box');
+const errorSummaryCount = document.getElementById('error-summary-count');
+const errorSummaryList  = document.getElementById('error-summary-list');
+const historyList       = document.getElementById('history-list');
+const historyEmpty      = document.getElementById('history-empty');
+const btnClearHistory   = document.getElementById('btn-clear-history');
 
 let currentFolder = '';
 let eventSource = null;
@@ -70,12 +76,86 @@ function showState(state) {
   }
 }
 
+// ── History ──────────────────────────────────────────────
+
+async function loadHistory() {
+  try {
+    const res  = await fetch('/api/history');
+    const data = await res.json();
+    renderHistory(data.history || []);
+  } catch {
+    renderHistory([]);
+  }
+}
+
+function renderHistory(entries) {
+  historyList.innerHTML = '';
+  if (entries.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'history-empty';
+    p.textContent = '履歴はありません';
+    historyList.appendChild(p);
+    return;
+  }
+
+  entries.forEach(entry => {
+    const hasErrors = entry.errors && entry.errors.length > 0;
+    const det = document.createElement('details');
+    det.className = 'history-entry' + (hasErrors ? ' has-errors' : '');
+
+    // Format timestamp
+    let dateStr = '';
+    try { dateStr = new Date(entry.timestamp).toLocaleString('ja-JP'); } catch {}
+
+    const provLabel = { anthropic: 'Claude', openai: 'GPT-4o', google: 'Gemini' }[entry.provider] || entry.provider;
+    const metaText  = `${dateStr}　${entry.total}枚　${provLabel} / ${entry.model}　${entry.language === 'ja' ? '日本語' : 'English'}`;
+    const badgeTxt  = hasErrors ? `${entry.errors.length}件エラー` : '完了';
+    const badgeCls  = hasErrors ? 'he-badge badge-err' : 'he-badge badge-ok';
+
+    det.innerHTML = `
+      <summary>
+        <span class="he-icon">${hasErrors ? '⚠️' : '✅'}</span>
+        <div class="he-info">
+          <span class="he-folder">${escHtml(entry.folder)}</span>
+          <span class="he-meta">${escHtml(metaText)}</span>
+        </div>
+        <span class="${badgeCls}">${badgeTxt}</span>
+      </summary>`;
+
+    if (hasErrors) {
+      const detail = document.createElement('div');
+      detail.className = 'he-detail';
+      const ul = document.createElement('ul');
+      ul.className = 'he-error-list';
+      entry.errors.forEach(e => {
+        const li = document.createElement('li');
+        li.textContent = `${e.filename}:  ${e.message}`;
+        ul.appendChild(li);
+      });
+      detail.appendChild(ul);
+      det.appendChild(detail);
+    }
+
+    historyList.appendChild(det);
+  });
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 btnStart.addEventListener('click', () => {
   currentFolder = folderSelect.value;
   if (!currentFolder) return;
 
   hideError(errorSelect);
   hideError(errorProcess);
+  errorSummaryBox.style.display = 'none';
+  errorSummaryList.innerHTML = '';
   btnStart.disabled = true;
 
   progressFolderName.textContent = currentFolder;
@@ -131,11 +211,26 @@ btnStart.addEventListener('click', () => {
       eventSource.close();
       eventSource = null;
 
-      completeMessage.textContent = `テキスト抽出が完了しました！  (${data.total ?? ''} 枚処理)`;
+      // Error summary
+      if (data.errors && data.errors.length > 0) {
+        completeMessage.textContent = `テキスト抽出が完了しました（${data.errors.length}件のエラーあり）  (${data.total ?? ''}枚処理)`;
+        errorSummaryCount.textContent = data.errors.length;
+        errorSummaryList.innerHTML = '';
+        data.errors.forEach(e => {
+          const li = document.createElement('li');
+          li.textContent = `${e.filename}:  ${e.message}`;
+          errorSummaryList.appendChild(li);
+        });
+        errorSummaryBox.style.display = '';
+      } else {
+        completeMessage.textContent = `テキスト抽出が完了しました！  (${data.total ?? ''} 枚処理)`;
+        errorSummaryBox.style.display = 'none';
+      }
       btnDownload.onclick = () => {
         window.location.href = `/api/download/${encodeURIComponent(currentFolder)}`;
       };
       showState('complete');
+      loadHistory();
     }
   };
 
@@ -161,4 +256,15 @@ btnReset.addEventListener('click', () => {
   btnStart.disabled = folderSelect.value === '';
 });
 
+btnClearHistory.addEventListener('click', async () => {
+  if (!confirm('変換履歴をすべて削除しますか？')) return;
+  try {
+    await fetch('/api/history', { method: 'DELETE' });
+    await loadHistory();
+  } catch (e) {
+    console.error('履歴クリア失敗:', e);
+  }
+});
+
 loadFolders();
+loadHistory();
